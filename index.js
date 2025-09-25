@@ -44,7 +44,7 @@ const configuration = {
     grant_types: ["authorization_code"],
     redirect_uris: ["http://localhost:8080/auth/login/callback"],
     response_types: ["code"],
-    scope: "openid email profile", // <-- define allowed scopes for this client
+    scope: "openid email profile permissions", // <-- define allowed scopes for this client
   }],
   pkce: { required: () => false },
 
@@ -53,7 +53,7 @@ const configuration = {
     openid: ['sub'],
     email: ['email'],
     profile: ['username', 'full_name', 'phone_number'],
-    custom: ['permissions']
+    permissions: ['permissions']
   },
   findAccount: async (ctx, id) => {
     const user = users.find(u => u.id === id);
@@ -72,7 +72,7 @@ const configuration = {
           claims.full_name = user.full_name;
           claims.phone_number = user.phone_number;
         }
-        if (scope.includes('custom')) {
+        if (scope.includes('permissions')) {
           claims.permissions = user.permissions;
         }
 
