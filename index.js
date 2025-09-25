@@ -44,7 +44,7 @@ const configuration = {
     grant_types: ["authorization_code"],
     redirect_uris: ["http://localhost:8080/auth/login/callback"],
     response_types: ["code"],
-    scope: "openid email profile custom", // <-- define allowed scopes for this client
+    scope: "openid email profile", // <-- define allowed scopes for this client
   }],
   pkce: { required: () => false },
 
@@ -55,30 +55,33 @@ const configuration = {
     profile: ['username', 'full_name', 'phone_number'],
     custom: ['permissions']
   },
-
-  // Map accountId -> claims
   findAccount: async (ctx, id) => {
     const user = users.find(u => u.id === id);
     if (!user) return undefined;
 
     return {
       accountId: id,
-      async claims(useScopes, rejectedClaims, details) {
-        // Return only claims requested by the scopes
-        const claims = {};
-        if (useScopes.includes('openid')) claims.sub = user.id;
-        if (useScopes.includes('email')) claims.email = user.email;
-        if (useScopes.includes('profile')) {
+      async claims(use, scope) {
+        const claims = { sub: user.id };
+
+        if (scope.includes('email')) {
+          claims.email = user.email;
+        }
+        if (scope.includes('profile')) {
           claims.username = user.username;
           claims.full_name = user.full_name;
           claims.phone_number = user.phone_number;
         }
-        if (useScopes.includes('custom')) claims.permissions = user.permissions;
+        if (scope.includes('custom')) {
+          claims.permissions = user.permissions;
+        }
 
         return claims;
-      }
-    };
-  }
+      }}}
+
+
+
+
 };
 
 // Create Provider instance
