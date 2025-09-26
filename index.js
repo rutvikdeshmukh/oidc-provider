@@ -1,8 +1,24 @@
 const express = require('express');
 const path = require('path');
 const { Provider } = require('oidc-provider');
+const session = require("express-session");
 
 const app = express();
+
+// Configure session middleware
+app.use(
+  session({
+    secret: "my-secret-key", // change this to a strong secret in production
+    resave: false,           // don't save session if not modified
+    saveUninitialized: false, // don't create empty sessions
+    cookie: {
+      maxAge: 1000 * 60 * 60 * 2, // 2 hours
+      httpOnly: true,
+      secure: true,      // required when using sameSite: 'none'
+      sameSite: "none"   // allow cookie to be sent cross-site
+    }
+  })
+);
 app.use(express.urlencoded({ extended: true })); // handle form POST
 
 // EJS for custom login page
@@ -12,7 +28,7 @@ app.set('view engine', 'ejs');
 // Dummy users with extra profile info
 const users = [
   {
-    id: '1',
+    guid:"acf544f6-b8f9-4ce7-8728-9584c918a9ac",
     username: 'alice',
     password: 'password123',
     email: 'alice@example.com',
@@ -21,7 +37,7 @@ const users = [
     permissions: ['read', 'write']
   },
   {
-    id: '2',
+    guid:"acf544f6-b8f9-4ce7-8728-9584c918a9ac",
     username: 'bob',
     password: 'mypassword',
     email: 'bob@example.com',
@@ -55,14 +71,14 @@ const configuration = {
     profile: ['username', 'full_name', 'phone_number'],
     permissions: ['permissions']
   },
-  findAccount: async (ctx, id) => {
-    const user = users.find(u => u.id === id);
+  findAccount: async (ctx, guid) => {
+    const user = users.find(u => u.guid === guid);
     if (!user) return undefined;
 
     return {
-      accountId: id,
+      accountId: guid,
       async claims(use, scope) {
-        const claims = { sub: user.id };
+        const claims = { sub: user.guid };
 
         if (scope.includes('email')) {
           claims.email = user.email;
@@ -96,10 +112,15 @@ oidc.use(async (ctx, next) => {
 
 // Interaction route: show login form
 app.get('/oidc/interaction/:uid', async (req, res) => {
-  const { uid, prompt, params, session } = await oidc.interactionDetails(req, res);
+  let { uid, prompt, params, session } = await oidc.interactionDetails(req, res);
 
   if (prompt.name === 'login') {
-    res.render('login', { uid, params, error: null });
+    if(req.session.userDetails) {
+      // Already logged in, skip login
+      const userGuid= req.session.userDetails.guid
+      return await oidc.interactionFinished(req, res, { login: { accountId: userGuid } }, { mergeWithLastSubmission: false });
+    }
+    return res.render('login', { uid, params, error: null });
   } else if (prompt.name === 'consent') {
     // Create or reuse a grant
     let grant;
@@ -110,9 +131,6 @@ app.get('/oidc/interaction/:uid', async (req, res) => {
 
     // Add scopes/claims requested by client
     if (params.scope) grant.addOIDCScope(params.scope);
-
-    // Add all claims for these scopes (you can customize)
-    grant.addOIDCClaims(['sub', 'email', 'username', 'full_name', 'phone_number', 'permissions']);
 
     const grantId = await grant.save();
     await oidc.interactionFinished(req, res, { consent: { grantId } }, { mergeWithLastSubmission: true });
@@ -132,12 +150,16 @@ app.post('/oidc/interaction/:uid/login', async (req, res, next) => {
       return res.render('login', { uid, params: {}, error: 'Invalid username or password' });
     }
 
-    const result = { login: { accountId: user.id } };
+    const result = { login: { accountId: user.guid } };
     await oidc.interactionFinished(req, res, result, { mergeWithLastSubmission: false });
   } catch (err) {
     next(err);
   }
 });
+app.post("/auth/syncUserSession",(req, res, next)=>{
+  const { sessionToken, locationCode, installedAppGuid } = req.body;
+  req.session.userDetails = { sessionToken, locationCode, installedAppGuid, guid };
+})
 
 // Attach provider
 app.use('/oidc', oidc.callback());
